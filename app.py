@@ -305,6 +305,27 @@ def _init_state() -> None:
             st.session_state[key] = val
 
 
+def _get_sample_data() -> tuple[pd.DataFrame, pd.DataFrame]:
+    """Retorna dados fictícios realistas para demonstrar todos os casos de conciliação."""
+    bank_data = [
+        {"date": pd.Timestamp("2024-05-10"), "description": "PIX RECEBIDO - CLIENTE JOAO SILVA", "value": 1500.00, "doc": "00142"},
+        {"date": pd.Timestamp("2024-05-12"), "description": "TED RECEBIDA EMPRESA ALFA LTDA", "value": 3450.80, "doc": "98231"},
+        {"date": pd.Timestamp("2024-05-14"), "description": "PGTO FORNECEDOR ABC SERVICOS", "value": -890.00, "doc": "55210"},
+        {"date": pd.Timestamp("2024-05-15"), "description": "PIX ENVIADO - ALUGUEL SALA 302", "value": -2200.00, "doc": "88123"},
+        {"date": pd.Timestamp("2024-05-18"), "description": "TARIFA PACOTE SERVICOS BANCARIOS", "value": -59.90, "doc": "00000"},
+        {"date": pd.Timestamp("2024-05-20"), "description": "RECEBIMENTO CARTAO CREDITO REDE", "value": 4120.50, "doc": "77100"},
+    ]
+    system_data = [
+        {"date": pd.Timestamp("2024-05-10"), "description": "Venda #1042 - Joao Silva (PIX)", "value": 1500.00, "doc": "00142"},
+        {"date": pd.Timestamp("2024-05-10"), "description": "Faturamento NF 892 Alfa Ltda", "value": 3450.80, "doc": "NF-892"},
+        {"date": pd.Timestamp("2024-05-13"), "description": "Fornec ABC Servicos Manutencao", "value": -895.00, "doc": "55210"},
+        {"date": pd.Timestamp("2024-05-15"), "description": "Aluguel Predio Comercial Sala 302", "value": -2200.00, "doc": "88123"},
+        {"date": pd.Timestamp("2024-05-22"), "description": "Venda Pendente #1099 - Maria Souza", "value": 720.00, "doc": "NF-1099"},
+        {"date": pd.Timestamp("2024-05-20"), "description": "Fechamento Lote Cartoes Credito", "value": 4120.50, "doc": "LOTE-77"},
+    ]
+    return pd.DataFrame(bank_data), pd.DataFrame(system_data)
+
+
 # ---------------------------------------------------------------------------
 # Export helpers
 # ---------------------------------------------------------------------------
@@ -495,6 +516,7 @@ def render_sidebar() -> dict:
 
         st.markdown("---")
         run_btn = st.button("🚀 Executar Conciliação", use_container_width=True)
+        demo_btn = st.button("🧪 Carregar Dados de Exemplo", use_container_width=True, help="Testa o app imediatamente com transações simuladas")
 
         st.markdown("---")
         st.markdown(
@@ -511,6 +533,7 @@ def render_sidebar() -> dict:
         "value_pct_tol": value_pct_tol,
         "desc_threshold": desc_threshold,
         "run": run_btn,
+        "demo": demo_btn,
     }
 
 
@@ -599,26 +622,27 @@ def _render_full_table(df: pd.DataFrame, empty_msg: str = "Nenhum dado disponív
             return "color: #f85149; font-weight: 600;"
         return ""
 
-    styled = df.style.applymap(style_kind, subset=["Tipo de Correspondência"])
+    style_func = getattr(df.style, "map", getattr(df.style, "applymap", None))
+    styled = style_func(style_kind, subset=["Tipo de Correspondência"])
     st.dataframe(styled, use_container_width=True, height=500)
 
 
-def render_empty_state() -> None:
-    """Render the landing / upload-prompt state."""
+def render_empty_state() -> bool:
+    """Render the landing / upload-prompt state. Retorna True se o usuario clicou no botao de demo."""
     st.markdown("""
     <div style="
         text-align: center;
-        padding: 60px 40px;
+        padding: 50px 40px 30px;
         background: rgba(255,255,255,0.03);
         border: 1px dashed rgba(255,255,255,0.1);
         border-radius: 20px;
-        margin: 40px 0;
+        margin: 30px 0;
     ">
-        <div style="font-size:4rem; margin-bottom:16px;">📂</div>
+        <div style="font-size:3.5rem; margin-bottom:12px;">📂</div>
         <h2 style="color:#e6edf3; font-weight:700; margin:0;">Pronto para Conciliar</h2>
         <p style="color:#8b949e; margin-top:8px; font-size:0.95rem;">
             Faça upload dos arquivos PDF na barra lateral e clique em<br>
-            <strong style="color:#58a6ff;">🚀 Executar Conciliação</strong> para começar.
+            <strong style="color:#58a6ff;">🚀 Executar Conciliação</strong> para começar, ou experimente a demonstração.
         </p>
         <br>
         <div style="display:flex; justify-content:center; gap:24px; flex-wrap:wrap; margin-top:8px;">
@@ -634,6 +658,12 @@ def render_empty_state() -> None:
         </div>
     </div>
     """, unsafe_allow_html=True)
+
+    c1, c2, c3 = st.columns([1, 2, 1])
+    demo_clicked = False
+    with c2:
+        if st.button("🧪 Carregar Demonstração com Valores Fictícios", type="primary", use_container_width=True):
+            demo_clicked = True
 
     # Feature cards
     st.markdown('<div class="section-title">✨ Recursos</div>', unsafe_allow_html=True)
@@ -653,6 +683,8 @@ def render_empty_state() -> None:
                 <div class="sub">{desc}</div>
             </div>
             """, unsafe_allow_html=True)
+
+    return demo_clicked
 
 
 # ---------------------------------------------------------------------------
@@ -722,14 +754,39 @@ def main() -> None:
 
         st.success(f"✅ Conciliação concluída! {report.match_rate}% de taxa de conciliação.")
 
+    elif config["demo"]:
+        with st.spinner("🔄 Carregando dados fictícios de demonstração..."):
+            bank_df, system_df = _get_sample_data()
+            engine = ReconciliationEngine(
+                window_days=config["window_days"],
+                value_pct_tol=config["value_pct_tol"],
+                desc_threshold=config["desc_threshold"],
+            )
+            t0 = time.perf_counter()
+            report = engine.reconcile(bank_df, system_df)
+            elapsed = time.perf_counter() - t0
+
+            st.session_state.bank_df = bank_df
+            st.session_state.system_df = system_df
+            st.session_state.report = report
+            st.session_state.result_df = report.to_dataframe()
+            st.session_state.elapsed = elapsed
+            st.session_state.bank_filename = "Extrato_Bancario_Exemplo.pdf"
+            st.session_state.system_filename = "Extrato_Sistema_Exemplo.pdf"
+            st.success(f"✅ Exemplo carregado! Taxa de conciliação: {report.match_rate}%")
+
     # ── Render results or empty state ──────────────────────────────────
     if st.session_state.report is not None:
-        # Show file info
-        c1, c2 = st.columns(2)
+        c1, c2, c3 = st.columns([2, 2, 1])
         with c1:
             st.info(f"🏦 **Banco:** {st.session_state.bank_filename}  |  {len(st.session_state.bank_df)} transações")
         with c2:
             st.info(f"🖥️ **Sistema:** {st.session_state.system_filename}  |  {len(st.session_state.system_df)} transações")
+        with c3:
+            if st.button("🔄 Nova Consulta", use_container_width=True):
+                st.session_state.report = None
+                st.session_state.result_df = None
+                st.rerun()
 
         render_results(
             st.session_state.result_df,
@@ -737,7 +794,27 @@ def main() -> None:
             st.session_state.elapsed,
         )
     else:
-        render_empty_state()
+        empty_demo = render_empty_state()
+        if empty_demo:
+            with st.spinner("🔄 Carregando dados fictícios de demonstração..."):
+                bank_df, system_df = _get_sample_data()
+                engine = ReconciliationEngine(
+                    window_days=config["window_days"],
+                    value_pct_tol=config["value_pct_tol"],
+                    desc_threshold=config["desc_threshold"],
+                )
+                t0 = time.perf_counter()
+                report = engine.reconcile(bank_df, system_df)
+                elapsed = time.perf_counter() - t0
+
+                st.session_state.bank_df = bank_df
+                st.session_state.system_df = system_df
+                st.session_state.report = report
+                st.session_state.result_df = report.to_dataframe()
+                st.session_state.elapsed = elapsed
+                st.session_state.bank_filename = "Extrato_Bancario_Exemplo.pdf"
+                st.session_state.system_filename = "Extrato_Sistema_Exemplo.pdf"
+                st.rerun()
 
 
 if __name__ == "__main__":

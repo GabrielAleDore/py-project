@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+.git/
+.gitignore
+.gemini/
+*.log
+deploy.ps1
+firebase.json
+.firebaserc
+public/
+README.md

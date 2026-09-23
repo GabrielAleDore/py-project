@@ -16,14 +16,21 @@ from __future__ import annotations
 
 import io
 import logging
+import os
+import sys
 import time
 from datetime import date
 from typing import Any
 
+# Garante que o diretório da aplicação tenha prioridade máxima no sys.path do Streamlit Cloud
+APP_ROOT = os.path.dirname(os.path.abspath(__file__))
+if APP_ROOT not in sys.path:
+    sys.path.insert(0, APP_ROOT)
+
 import pandas as pd
 import streamlit as st
 
-from engine import conciliar_extratos_avancado
+from reconciliation_engine import conciliar_extratos_avancado
 from parsers import extrair_santander, extrair_sistema
 
 # ---------------------------------------------------------------------------
